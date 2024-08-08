@@ -3,7 +3,7 @@ import os
 import json
 
 
-dir = ('C:/Users/RD/WorkWork/Prog/Datasets/8.3.2024new/d/d/Datase/sorted/')
+dir = ('C:/Users/RD/WorkWork/Prog/Datasets/yolov5/validation/labels/')
 
 
 for root, dirs, files in os.walk(dir):
