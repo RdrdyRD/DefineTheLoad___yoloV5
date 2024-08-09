@@ -1,0 +1,11 @@
+# Путь к вашим изображениям и аннотациям
+path: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/Dataset_for_train/new  # путь к корневой директории вашего датасета
+
+# Подпуть к тестовым данным
+test: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/Dataset_for_train/new/images  # путь к тестовым изображениям относительно переменной path
+
+# Классы объектов
+nc: 3  # количество классов (например, 3)
+
+# Названия классов
+names: ['Empty', 'Gravel', 'Sand']  # список названий классов
