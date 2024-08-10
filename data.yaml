@@ -1,9 +1,5 @@
-train: /home/rdrdyrd/WorkWork/Datasets/August_9_24_yolov5/d/new/train/images
-val: /home/rdrdyrd/WorkWork/Datasets/August_9_24_yolov5/d/new/val/images
-# Подпуть к тестовым данным
-test: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/Dataset_for_train/new/images   # путь к тестовым изображениям относительно переменной path
-
+train: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/MainDataset/train
+val: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/MainDataset/val
+test: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/MainDataset/test
 nc: 3
-
-
 names: ['Empty', 'Gravel', 'Sand']
