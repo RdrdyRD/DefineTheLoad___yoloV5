@@ -1,0 +1,5 @@
+train: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/MainDataset/train
+val: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/MainDataset/val
+test: /home/rdrdyrd/WorkWork/Datasets/Dataset_Yolov5_DefineTheLoad/MainDataset/test
+nc: 3
+names: ['Empty', 'Gravel', 'Sand']
