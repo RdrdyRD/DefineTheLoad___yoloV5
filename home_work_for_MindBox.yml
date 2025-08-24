@@ -16,7 +16,6 @@ metadata:
     name: app123
 spec:
   replicas: 4   # По условиям задачи 4 пода справляются с пиковой нагрузкой. Мы чуть позже с помощью HPA увеличим на всякий случай до 5 (заодно покажем, что умеем обращаться с автоскелером)
-  revisionhistorylimits: 5 
   strategy: 
     type: RollingUpdate
     rollingupdate:
@@ -44,13 +43,14 @@ spec:
               machtLabels:
                 app: app123
         affinity:
-          prefferDuringSchedulingIgnoreDuringExecution:
-            - weight: 100
-            podAffinityTerm:
-              topologyKey: kubernetes.io/hostname
-              labelSelector:
-                matchLabels:
-                  app: app123
+         podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: app123
         terminationGracePeriodSeconds: 20 
 	containers:
 	  - name: app123_container
@@ -58,6 +58,10 @@ spec:
 	    imagePullPolicy: ifNotPresent
 	    ports:
 	      - containerPort: 80
+	    lifecycle: #Здесь мы укажем с помощью команды терминала, чтобы в случае, например, получения команды на завершение, сразу был в состоянии Pending (достигается "укладыванием спать"), чтобы фейлилась readyness проба, чтобы трафик на под не поступал сразу же после получения команды.
+              preStop:
+                exec:
+                  command: ["sh", "-c", "sleep 5"]    
 	    resources:
 	      cpu: "100m"  #здесь мы запросим указанный в задании 0.1 CPU
 	      memory: "128M" #то же самое но для памяти. 128M memory
@@ -138,9 +142,9 @@ spec:
 apiVersion: policy/v1
 kind: podDisruptionBudget
 metadata:
-  name: pod123PDB
+  name: myapp123
   labels: 
-    app: pod123
+    app: myapp123
 spec:
   minAvailable: 3 # Здесь надо отметить тот факт, что PDB никак не влияет на HPA, replicas. Он включается в дело лишь в случаях drain, maintenance ноды, когда надо выселить поды с данной ноды для обслуживания.
   selector:
