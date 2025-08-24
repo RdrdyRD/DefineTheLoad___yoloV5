@@ -1,0 +1,151 @@
+# 1)у нас мультизональный кластер (три зоны), в котором пять нод
+# ==> здесь мы будем использовать аффинность/антиаффиность для того, чтобы все ноды не скапливались в одной зоне.
+# 2)приложение требует около 5-10 секунд для инициализации ==> будем использовать startupprobe,readnessprobe для того, чтобы адекватно реагировать на начальную задержку запуска пода.
+# 3)по результатам нагрузочного теста известно, что 4 пода справляются с пиковой нагрузкой ==> replicaset: 4, базовый уровень, от которого будем отталкиваться.
+# 4)на первые запросы приложению требуется значительно больше ресурсов CPU, в дальнейшем потребление ровное в районе 0.1 CPU. По памяти всегда “ровно” в районе 128M memory
+# приложение имеет дневной цикл по нагрузке – ночью запросов на порядки меньше, пик – днём==> Horizontal autoscaler настроим на CPU на предположительный минимум ночью (допустим, 1 #под) и 5 подами верхним (для дневного с запасом).PodDisruptionBudget для предотвращения выгрузки всех подов одновременно.
+# хотим максимально отказоустойчивый deployment
+# хотим минимального потребления ресурсов от этого deployment’а
+
+
+apiVersion: apps/v1
+kind: deployment
+metadata:
+  name: app123
+  labels:
+    name: app123
+spec:
+  replicas: 4   # По условиям задачи 4 пода справляются с пиковой нагрузкой. Мы чуть позже с помощью HPA увеличим на всякий случай до 5 (заодно покажем, что умеем обращаться с автоскелером)
+  revisionhistorylimits: 5 
+  strategy: 
+    type: RollingUpdate
+    rollingupdate:
+      maxsurge: 1 # Обновляем по 1 поду
+      maxUnavailabale: 1 # Максимально недоступно подов
+  selector:
+    matchLabels:
+      app: app123
+  template:
+    metadata:
+      labels:
+        app: app123
+      spec: # Здесь мы будем определять разбиение нод зонам таким образом, что все ноды не скопились в одной зоне.
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfable: scheduleAnyway
+            labelSelector:
+              matchLabels: 
+                app: app123
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfable: scheduleAnyway
+            labelSelector:
+              machtLabels:
+                app: app123
+        affinity:
+          prefferDuringSchedulingIgnoreDuringExecution:
+            - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: app123
+        terminationGracePeriodSeconds: 20 
+	containers:
+	  - name: app123_container
+	    image: registry321.com/app123:1.0.0
+	    imagePullPolicy: ifNotPresent
+	    ports:
+	      - containerPort: 80
+	    resources:
+	      cpu: "100m"  #здесь мы запросим указанный в задании 0.1 CPU
+	      memory: "128M" #то же самое но для памяти. 128M memory
+	    limits: 
+	      cpu: "1000m" #для указанонго в задании увеличенного в разы потребления для старта пода
+              memory: "128M" оставим, потому как потребление памяти стабильно
+        #пройдёмся по пробам для адекватного функционирования
+        startUpProbe: #Так как у нас приложение с "тяжелым" стартом, нам нужно будет уделить внимание начальной фазе. Дадим приложению какое-то время (я выставил 20 секунд, можно исправить) чтобы стартовать, прежде чем liveness и readyness пробы начнут стучаться в наш под.
+          httpGet:
+            path: health/startup
+            port: 8080
+          periodSeconds: 2s
+          failureThreshold: 10 #У нас получится 10 раз * 2 cекунды = 20 секунд на старт. Можно увеличить/уменьшить в зависимости от конкретики.
+        readinessProbe: #после того, как стартап проба прошла, проверим, может ли наше приложение обслуживать траффик.
+          httpGet: 
+            path: health/ready
+            port: 8080
+          initialDelaySeconds: 1 #стартуем сразу, так как стартап проба уже проверила.
+          periodSeconds: 5 # раз в пять секунд повторяем
+          timeoutSeconds: 5 # ждём ответа 5 секунд
+          failureThreshold: 5 # 5 попыток до признания неудачи
+          successThreshold: 2 # 2 попытки для признания удачи. тут я всегда выставляю маленькое значение, так как шанс на случайно-удачную пробу в купе с другими удачными пробами очень мал
+        livenessProbe: #наконец, проверим контейнер на зависание. Так как кроме начального пика, который к моменту проверки liveness будет уже пройден, других пиков не предвидится, выставим более-менее стандартные значения.
+          httpGet:
+            path: health/lilvly
+            port: 8080
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+   
+
+#для максимальной эффективности использования финансов введём автошкалирование подов с помощью HPA. Будем обрабатывать дневные/ночные изменения траффика. 
+
+apiVersion: apps/v1
+kind: horizontalPodAutosclaer
+metadata:
+  name: HPAapp123
+  labels:
+    app: app123
+spec:
+  scaleTargetRef: #устанавливаем цель нашего шкалирования. так как за количество подов отвечает контероллер replicaset, будем "целиться" в него.
+    apiversion: apps/v1
+    kind: deployment
+    name: app123
+  minReplicas: 1 # устанавливаем дневной минимум
+  maxReplicas: 5 # устанавливаем ночной максимум. Я помню, что 4 справляются с пиками, но добавим ещё 1 "на всякий случай".
+  behavior: # опишем поведение при конкретных сценариях увеличения/уменьшения количества
+    scaleDown: 
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: pods # шкалирование по подам
+          value: 2
+          periodSeconds: 60 #поднимаем на 2 пода в минуту. Это необходимо для того, чтобы "тяжелый" старт наших подов не повалил систему.
+        - type: percent # шкалирование по процентам  
+          value: 50
+          periodSeconds: 60 # не убираем больше чем на половину подов в минуту
+    scaleUp:
+      stabilizationWindowSeconds: 0 #максимально быстро обрабатываем увеличение траффика
+        policies:
+          - type: pods
+            values: 2 
+            periodSeconds: 60 #максимум на два пода в минуту, чтобы не контролировать "лавину" создания подов.
+          - type: percentage
+            value: 100
+            periodSeconds: 60
+      selectPolicy: Max  
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60 # среднее ~60% CPU (баланс цена/производительность). Мы должны оставить некоторое количество мощностей для возможности отыгрывать резко возрастающий трафик, с которым в моменте может не справляться HPA, оставить мощности для внутренних скачков потребления.
+            
+            
+#Также для безопасности и устойчивости введём PodDisrutionBudget. Он будет следить за минимальными значениями количества подов, чтобы какой-нибудь HPA не уничтожил разом все поды.
+apiVersion: policy/v1
+kind: podDisruptionBudget
+metadata:
+  name: pod123PDB
+  labels: 
+    app: pod123
+spec:
+  minAvailable: 3 # Здесь надо отметить тот факт, что PDB никак не влияет на HPA, replicas. Он включается в дело лишь в случаях drain, maintenance ноды, когда надо выселить поды с данной ноды для обслуживания.
+  selector:
+    matchLabels:
+      app: myapp123
+      
+      
+#ВАЖНО! отдельно замечу, что конкретные значения проб, HPA, PDB должны основываться на бОльшем спектре информации. Я представил те значения, что мне показались адекватными к данному конкретному пулу информации из задания.          
